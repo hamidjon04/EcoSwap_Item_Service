@@ -1,11 +1,8 @@
 CURRENT_DIR := $(shell pwd)
 DATABASE_URL="postgres://postgres:hamidjon4424@localhost:5432/ecoswap?sslmode=disable"
 
-run-router:
-	@go run cmd/router/main.go
-
-run-service:
-	@go run cmd/service/main.go
+run:
+	@go run cmd/main.go
 
 gen-proto:
 	@./scripts/gen-proto.sh $(CURRENT_DIR)
