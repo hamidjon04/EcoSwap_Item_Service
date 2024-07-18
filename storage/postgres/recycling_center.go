@@ -25,9 +25,19 @@ func (R *ItemRepo) CreateRecyclingCenter(req *pb.ResCenter) (*pb.ResponceResCent
 		log.Println(err)
 		return nil, err
 	}
+	var scan []byte
 	err = R.Db.QueryRow(query, req.Name, req.Address, data, req.WorkingHours, req.ContactNumber).
-		Scan(&resp.Id, &resp.Name, &resp.Address, &resp.AcceptedMaterials, &resp.WorkingHours, &resp.CreatedAt)
-	return &resp, err
+		Scan(&resp.Id, &resp.Name, &resp.Address, &scan, &resp.WorkingHours, &resp.ContactNumber, &resp.CreatedAt)
+	if err != nil{
+		log.Println(err)
+		return nil, err
+	}
+	err = json.Unmarshal(scan, &resp.AcceptedMaterials)
+	if err != nil{
+		log.Println(err)
+		return nil, err
+	}
+	return &resp, nil
 }
 
 func (R *ItemRepo) SearchRecyclingCenter(req *pb.FilterField) (*pb.ResAllCenter, error) {
@@ -35,17 +45,26 @@ func (R *ItemRepo) SearchRecyclingCenter(req *pb.FilterField) (*pb.ResAllCenter,
 	var total int32
 	query := `
 				SELECT 
-					id, count(id), name, address, accepted_materials, working_hours, contact_number
+					id, name, address, accepted_materials, working_hours, contact_number
 				FROM 
 					item_service_recycling_centers
 				WHERE
 					TRUE`
+	queryTotal := `
+				SELECT
+					count(*)
+				FROM 
+					item_service_recycling_centers
+				WHERE 
+					TRUE`
+		
 	arr := []interface{}{}
 	if len(req.Material) > 0 {
 		query += " AND material = $1"
+		queryTotal += " AND material = $1"
 		arr = append(arr, req.Material)
 	}
-	err := R.Db.QueryRow(query, arr...).Scan(nil, &total, nil, nil, nil, nil, nil)
+	err := R.Db.QueryRow(queryTotal, arr...).Scan(&total)
 	if err != nil {
 		log.Println(err)
 		return nil, err
@@ -66,11 +85,17 @@ func (R *ItemRepo) SearchRecyclingCenter(req *pb.FilterField) (*pb.ResAllCenter,
 		return nil, err
 	}
 
+	var scan []byte
 	for rows.Next() {
 		var center pb.Center
-		err = rows.Scan(&center.Id, nil, &center.Name, &center.Address, &center.AcceptedMaterials,
+		err = rows.Scan(&center.Id, &center.Name, &center.Address, &scan,
 			&center.WorkingHours, &center.ContactNumber)
 		if err != nil {
+			log.Println(err)
+			return nil, err
+		}
+		err := json.Unmarshal(scan, &center.AcceptedMaterials)
+		if err != nil{
 			log.Println(err)
 			return nil, err
 		}
@@ -91,7 +116,7 @@ func (R *ItemRepo) ProductDelivery(req *pb.Submission) (*pb.SubmissionResp, erro
 				INSERT INTO item_service_recycling_submissions(
 					center_id, user_id, items, eco_points_earned)
 				VALUES
-					($1, $2, $3)
+					($1, $2, $3, $4)
 				RETURNING
 					id, center_id, user_id, items, eco_points_earned, created_at`
 	data, err := json.Marshal(req.JsonDataItems)
@@ -104,15 +129,16 @@ func (R *ItemRepo) ProductDelivery(req *pb.Submission) (*pb.SubmissionResp, erro
 	return &resp, err
 }
 
+//----------------------------------------------?
 func (R *ItemRepo) GetStatistics(req *pb.StatisticField) (*pb.Statistics, error) {
 	resp := pb.Statistics{}
 	query := `
-				SELECT 
-					count(id)
-				FROM 
-					%s
-				WHERE
-					created_at BETWEEN %s AND %s`
+		SELECT 
+			count(*)
+		FROM 
+			%s
+		WHERE
+			created_at BETWEEN to_timestamp(%s) AND to_timestamp(%s)`
 
 	err := R.Db.QueryRow(fmt.Sprintf(query, "item_service_swaps", req.StartDate, req.EndDate)).Scan(&resp.TotalSwaps)
 	if err != nil {
@@ -136,22 +162,22 @@ func (R *ItemRepo) GetStatistics(req *pb.StatisticField) (*pb.Statistics, error)
 	}
 
 	query = `
-				SELECT 
-					id, name
-				FROM
-					(SELECT 
-						category_id
-					FROM
-						item_service_items
-					GROUP BY 
-						category_id
-					ORDER BY 
-						COUNT(id) DESC
-					LIMIT 1) as T1
-				JOIN
-					item_service_item_categories as T2
-				ON 
-					T1.category_id = T2.id`
+		SELECT 
+			id, name
+		FROM
+			(SELECT 
+				category_id
+			FROM
+				item_service_items
+			GROUP BY 
+				category_id
+			ORDER BY 
+				COUNT(id) DESC
+			LIMIT 1) as T1
+		JOIN
+			item_service_item_categories as T2
+		ON 
+			T1.category_id = T2.id`
 	var category items.CategoryResponse
 	err = R.Db.QueryRow(query).Scan(&category.Id, &category.Name)
 	if err != nil {
@@ -161,22 +187,22 @@ func (R *ItemRepo) GetStatistics(req *pb.StatisticField) (*pb.Statistics, error)
 	resp.JsonDataTopCateg = category.Name
 
 	query = `
-				SELECT 
-					id, name
-				FROM
-					(SELECT 
-						center_id
-					FROM
-						item_service_recycling_submissions
-					GROUP BY 
-						center_id
-					ORDER BY 
-						COUNT(id) DESC
-					LIMIT 1) as T1
-				JOIN
-					item_service_recycling_centers as T2
-				ON 
-					T1.center_id = T2.id`
+		SELECT 
+			id, name
+		FROM
+			(SELECT 
+				center_id
+			FROM
+				item_service_recycling_submissions
+			GROUP BY 
+				center_id
+			ORDER BY 
+				COUNT(id) DESC
+			LIMIT 1) as T1
+		JOIN
+			item_service_recycling_centers as T2
+		ON 
+			T1.center_id = T2.id`
 	var center pb.Center
 	err = R.Db.QueryRow(query).Scan(&center.Id, &center.Name)
 	if err != nil {

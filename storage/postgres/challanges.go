@@ -42,7 +42,7 @@ func (C *ItemRepo) UpdateChallengeResult(req *pb.ChallengeUpdate) (*pb.RespUpdat
 	query := `
 				UPDATE item_service_challenge_participations SET
 					recycled_items_count = $1,
-					updates_at = $2
+					updated_at = $2
 				WHERE
 					challenge_id = $3 AND user_id = $4
 				RETURNING
@@ -70,18 +70,26 @@ func (C *ItemRepo) GetAllEcoTips(req *pb.FilterTip) (*pb.Tips, error) {
 	var total int32
 	query := `
 				SELECT 
-					id, count(id), title, content, created_at
+					id, title, content, created_at
 				FROM 
 					item_service_eco_tips
 				WHERE 
 					TRUE`
+	queryTotal := `
+					SELECT 
+						count(*)
+					FROM 
+						item_service_eco_tips
+					WHERE 
+						TRUE`
 	arr := []interface{}{}
 	if len(req.Title) > 0 {
 		query += " AND title = $1"
+		queryTotal += " AND title = $1"
 		arr = append(arr, req.Title)
 	}
 
-	err := C.Db.QueryRow(query, arr...).Scan(nil, &total, nil, nil, nil)
+	err := C.Db.QueryRow(queryTotal, arr...).Scan(&total)
 	if err != nil {
 		log.Println(err)
 		return nil, err
@@ -104,7 +112,7 @@ func (C *ItemRepo) GetAllEcoTips(req *pb.FilterTip) (*pb.Tips, error) {
 	for rows.Next() {
 		var tip pb.RespEcoTip
 		err = rows.Scan(
-			&tip.Id, nil, &tip.Title, &tip.Content, &tip.CreatedAt)
+			&tip.Id, &tip.Title, &tip.Content, &tip.CreatedAt)
 		if err != nil {
 			log.Println(err)
 			return nil, err

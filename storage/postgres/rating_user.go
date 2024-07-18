@@ -32,10 +32,11 @@ func (R *ItemRepo) GetUserActivity(req *pb.FilterActivity) (*pb.Activity, error)
 					%s
 				WHERE 
 					%s = $1 AND 
-					created_at BETWEEN %s AND %s`
+					created_at BETWEEN to_timestamp(%s) AND to_timestamp(%s)`
 
 	err := R.Db.QueryRow(fmt.Sprintf(query, "item_service_swaps", "requester_id", req.StartDate, req.EndDate), req.UserId).
 		Scan(&resp.SwapsInitiated)
+
 	if err != nil {
 		log.Println(err)
 		return nil, err
@@ -79,12 +80,19 @@ func (R *ItemRepo) GetUserRating(req *pb.FilterField) (*pb.UserRating, error) {
 	var total int32
 	query := `
 				SELECT 
-					id, count(id), rater_id, rating, comment, swap_id, created_at
+					id, rater_id, rating, comment, swap_id, created_at
 				FROM 
 					item_service_ratings
 				WHERE 
 					user_id = $1`
-	err := R.Db.QueryRow(query, req.UserId).Scan(nil, &total, nil, nil, nil, nil, nil)
+	queryTotal := `
+					SELECT 
+						count(*)
+					FROM
+						item_service_ratings
+					WHERE 
+						user_id = $1`
+	err := R.Db.QueryRow(queryTotal, req.UserId).Scan(&total)
 	if err != nil {
 		log.Println(err)
 		return nil, err
@@ -106,7 +114,7 @@ func (R *ItemRepo) GetUserRating(req *pb.FilterField) (*pb.UserRating, error) {
 	var sumRatings float32
 	for rows.Next() {
 		var rating pb.RatingUser
-		err = rows.Scan(&rating.Id, nil, &rating.RaterId, &rating.Rating, &rating.Comment, &rating.SwapId, &rating.CreatedAt)
+		err = rows.Scan(&rating.Id, &rating.RaterId, &rating.Rating, &rating.Comment, &rating.SwapId, &rating.CreatedAt)
 		if err != nil {
 			log.Println(err)
 			return nil, err
