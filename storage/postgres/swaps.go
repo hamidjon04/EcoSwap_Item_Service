@@ -12,14 +12,14 @@ func (S *ItemRepo) SendSwapRequest(req *pb.SwapRequest) (*pb.SwapResponce, error
 	query := `
 				INSERT INTO item_service_swaps(
 					requester_id, owner_id, offered_item_id,
-					requested_item_id, message)
+					requested_item_id, message, status)
 				VALUES
-					($1, $2, $3, $4, $5)
+					($1, $2, $3, $4, $5, $6)
 				RETURNING
 					id, requester_id, owner_id, offered_item_id,
 					requested_item_id, message, status, created_at`
 	err := S.Db.QueryRow(query, req.RequesterId, req.OwnerId, req.OfferedItemId,
-		req.RequestedItemId, req.Message).
+		req.RequestedItemId, req.Message, "activ").
 		Scan(
 			&resp.Id, &resp.RequesterId, &resp.OwnerId, &resp.OfferedItemId,
 			&resp.RequestedItemId, &resp.Message, &resp.Status, &resp.CreatedAt)
@@ -30,7 +30,7 @@ func (S *ItemRepo) AdoptionSwapRequest(req *pb.Reason) (*pb.Responce, error) {
 	resp := pb.Responce{}
 	query := `
 				UPDATE item_service_swaps SET
-					status = "accepted",
+					status = 'accepted',
 					message = $2
 				WHERE 
 					deleted_at is null AND id = $1
@@ -48,7 +48,7 @@ func (S *ItemRepo) RejectionSwapRequest(req *pb.Reason) (*pb.Responce, error) {
 	resp := pb.Responce{}
 	query := `
 				UPDATE item_service_swaps SET
-					status = "rejected",
+					status = 'rejected',
 					message = $2
 				WHERE 
 					deleted_at is null AND id = $1
@@ -67,19 +67,27 @@ func (S *ItemRepo) GetAllSwapRequests(req *pb.FilterField) (*pb.AllSwaps, error)
 	var total int32
 	query := `
 				SELECT 
-					id, count(id), requester_id, owner_id, offered_item_id,
+					id, requester_id, owner_id, offered_item_id,
 					requested_item_id, message, created_at
 				FROM 
 					item_service_swaps
 				WHERE 
 					deleted_at is null`
+	queryTotal := `
+					SELECT 
+						count(*)
+					FROM
+						item_service_swaps
+					WHERE 
+						deleted_at is null`
 	arr := []interface{}{}
 	if len(req.Status) > 0 {
 		query += " AND status = $1"
+		queryTotal += " AND status = $1"
 		arr = append(arr, req.Status)
 	}
 	
-	err := S.Db.QueryRow(query, arr...).Scan(nil, &total, nil, nil, nil, nil, nil, nil)
+	err := S.Db.QueryRow(queryTotal, arr...).Scan(&total)
 	if err != nil {
 		log.Println(err)
 		return nil, err
@@ -102,7 +110,7 @@ func (S *ItemRepo) GetAllSwapRequests(req *pb.FilterField) (*pb.AllSwaps, error)
 	for rows.Next() {
 		var swap pb.Swap
 		err = rows.Scan(
-			&swap.Id, nil, &swap.RequesterId, &swap.OwnerId, &swap.OfferedItemId,
+			&swap.Id, &swap.RequesterId, &swap.OwnerId, &swap.OfferedItemId,
 			&swap.RequestedItemId, &swap.Status, &swap.CreatedAt)
 		if err != nil {
 			log.Println(err)

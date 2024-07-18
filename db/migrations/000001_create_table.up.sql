@@ -1,3 +1,12 @@
+CREATE TABLE IF NOT EXISTS item_service_item_categories (
+	id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+	name varchar NOT NULL,
+	description text,
+	created_at timestamp DEFAULT CURRENT_TIMESTAMP,
+	updated_at timestamp DEFAULT CURRENT_TIMESTAMP,
+	deleted_at timestamp DEFAULT null
+);
+
 CREATE TABLE IF NOT EXISTS item_service_items(
 	id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
 	name varchar NOT NULL,
@@ -6,7 +15,7 @@ CREATE TABLE IF NOT EXISTS item_service_items(
 	condition varchar NOT NULL,
 	swap_preference jsonb NOT NULL,
 	owner_id uuid,
-	status varchar NOT NULL, 
+	status varchar DEFAULT 'activ', 
 	created_at timestamp DEFAULT CURRENT_TIMESTAMP,
 	updated_at timestamp DEFAULT CURRENT_TIMESTAMP,
 	deleted_at timestamp DEFAULT NULL
@@ -18,21 +27,13 @@ CREATE TABLE IF NOT EXISTS item_service_swaps (
 	requested_item_id uuid REFERENCES Item_Service_Items(id),
 	requester_id uuid NOT NULL,
 	owner_id uuid NOT null,
-	status varchar NOT NULL,
+	status varchar DEFAULT 'activ',
 	message text, 
 	created_at timestamp DEFAULT CURRENT_TIMESTAMP,
 	updated_at timestamp DEFAULT CURRENT_TIMESTAMP,
 	deleted_at timestamp DEFAULT null
 );
 
-CREATE TABLE IF NOT EXISTS item_service_item_categories (
-	id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-	name varchar NOT NULL,
-	description text,
-	created_at timestamp DEFAULT CURRENT_TIMESTAMP,
-	updated_at timestamp DEFAULT CURRENT_TIMESTAMP,
-	deleted_at timestamp DEFAULT null
-);
 
 CREATE TABLE IF NOT EXISTS item_service_recycling_centers (
 	id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -59,7 +60,7 @@ CREATE TABLE IF NOT EXISTS item_service_ratings (
 	id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
 	user_id uuid NOT NULL, 
 	rater_id uuid NOT NULL, 
-	rating decimal((2, 1)), 
+	rating decimal, 
 	comment text, 
 	swap_id uuid REFERENCES Item_Service_Swaps(id),
 	created_at timestamp DEFAULT CURRENT_TIMESTAMP
@@ -80,7 +81,7 @@ CREATE TABLE IF NOT EXISTS item_service_challenge_participations (
 	id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
 	challenge_id uuid REFERENCES Item_Service_Eco_Challenges(id),
 	user_id uuid NOT NULL,
-	status varchar DEFAULT "joined",
+	status varchar DEFAULT 'joined',
 	recycled_items_count int DEFAULT 0,
 	joined_at timestamp  DEFAULT CURRENT_TIMESTAMP,
 	created_at timestamp  DEFAULT CURRENT_TIMESTAMP,

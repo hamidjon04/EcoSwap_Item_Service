@@ -2,6 +2,7 @@ package postgres
 
 import (
 	pb "ecoswap/genproto/items"
+	"encoding/json"
 	"fmt"
 	"log"
 	"math"
@@ -14,17 +15,18 @@ func (I *ItemRepo) CreateItem(item *pb.Item) (*pb.ItemResponce, error) {
 	resp := pb.ItemResponce{}
 	query := `
 				INSERT INTO item_service_items(
-					name, description, category_id, condition, swap_prefernce, owner_id)
+					name, description, category_id, condition, swap_preference, owner_id, status)
 				VALUES
-					($1, $2, $3, $4, $5, $6)
+					($1, $2, $3, $4, $5, $6, $7)
 				RETURNING
-					id, name, description, category_id, condition, swap_prefernce,
-					owner_id, status, created_at`
+					id, name, description, category_id, condition, owner_id, status, created_at`
+	data, _ := json.Marshal(item.SwapPreference)
 	err := I.Db.QueryRow(query, item.Name, item.Description, item.CategoryId,
-		item.Condition, item.SwapPreference, item.OwnerId).
+		item.Condition, data, item.OwnerId, "activ").
 		Scan(
 			&resp.Id, &resp.Name, &resp.Description, &resp.CategoryId, &resp.Condition,
-			&resp.SwapPreference, &resp.OwnerId, &resp.Status, &resp.CreatedAt)
+			&resp.OwnerId, &resp.Status, &resp.CreatedAt)
+	resp.SwapPreference = item.SwapPreference
 	return &resp, err
 }
 
@@ -36,12 +38,18 @@ func (I *ItemRepo) UpdateItem(req *pb.ItemUpdate) (*pb.UpdateResponse, error) {
 				WHERE 
 					id = $5 AND deleted_at is null
 				RETURNING
-					id, name, description, category_id, condition, swap_prefernce, 
+					id, name, description, category_id, condition, swap_preference, 
 					owner_id, status, updated_at`
-	err := I.Db.QueryRow(query, req.Name, req.Condition, req.Status, req.Id).
+	var data []byte
+	err := I.Db.QueryRow(query, req.Name, req.Condition, req.Status, time.Now(), req.Id).
 		Scan(
 			&resp.Id, &resp.Name, &resp.Description, &resp.CategoryId, &resp.Condition,
-			&resp.SwapPreference, &resp.OwnerId, &resp.Status, &resp.UpdatedAt)
+			&data, &resp.OwnerId, &resp.Status, &resp.UpdatedAt)
+	if err != nil{
+		fmt.Println(err)
+		return nil, err
+	}
+	err = json.Unmarshal(data, &resp.SwapPreference)
 	return &resp, err
 }
 
@@ -75,15 +83,25 @@ func (I *ItemRepo) GetItem(itemId *pb.ItemId) (*pb.GetItemResp, error) {
 	resp := pb.GetItemResp{}
 	query := `
 				SELECT 
-					id, name, description, catrgory_id, condetion, swap_prefernce, 
+					id, name, description, category_id, condition, swap_preference, 
 					owner_id, status, created_at, updated_at
 				FROM 
 					item_service_items
 				WHERE 
 					id = $1 AND deleted_at is null`
+	var data []byte
 	err := I.Db.QueryRow(query, itemId.Id).Scan(
 		&resp.Id, &resp.Name, &resp.Description, &resp.CategoryId, &resp.Condition,
-		&resp.SwapPreference, &resp.OwnerId, &resp.Status, &resp.CreatedAt, &resp.UpdatedAt)
+		&data, &resp.OwnerId, &resp.Status, &resp.CreatedAt, &resp.UpdatedAt)
+	if err != nil{
+		log.Println(err)
+		return nil, err
+	}
+	err = json.Unmarshal(data, &resp.SwapPreference)
+	if err != nil{
+		log.Println(err)
+		return nil, err
+	}
 	return &resp, err
 }
 
@@ -93,35 +111,47 @@ func (I *ItemRepo) SearchItems(req *pb.FilterField) (*pb.AllItems, error) {
 
 	query := `
 				SELECT 
-					id, count(id), name, category_id, condition, owner_id, status
+					id, name, category_id, condition, owner_id, status
 				FROM 
 					item_service_items
 				WHERE
 					deleted_at is null`
+	queryTotal := `
+					SELECT 
+						count(*)
+					FROM
+						item_service_items
+					WHERE 
+						deleted_at is null`
 	param := []string{}
 	arr := []interface{}{}
 
 	if len(req.Name) > 0 {
 		query += " AND name = :name"
+		queryTotal += " AND name = :name"
 		param = append(param, ":name")
 		arr = append(arr, req.Name)
 	}
 	if len(req.CategoryId) > 0 {
 		query += " AND category_id = :category_id"
+		queryTotal += " AND category_id = :category_id"
 		param = append(param, ":category_id")
 		arr = append(arr, req.CategoryId)
 	}
 	if len(req.Condition) > 0 {
 		query += " AND condition = :condition"
+		queryTotal += " AND condition = :condition"
 		param = append(param, ":condition")
 		arr = append(arr, req.Condition)
 	}
 
 	for i, j := range param {
 		query = strings.Replace(query, j, "$"+strconv.Itoa(i+1), 1)
+		queryTotal = strings.Replace(queryTotal, j, "$"+strconv.Itoa(i+1), 1)
+
 	}
 
-	err := I.Db.QueryRow(query, arr...).Scan(nil, &total, nil, nil, nil, nil, nil)
+	err := I.Db.QueryRow(queryTotal, arr...).Scan(&total)
 	if err != nil {
 		log.Println(err)
 		return nil, err
@@ -143,7 +173,7 @@ func (I *ItemRepo) SearchItems(req *pb.FilterField) (*pb.AllItems, error) {
 	}
 	for rows.Next() {
 		var item pb.AllItem
-		err = rows.Scan(&item.Id, nil, &item.Name, &item.CategoryId, &item.Condition,
+		err = rows.Scan(&item.Id, &item.Name, &item.CategoryId, &item.Condition,
 			&item.OwnerId, &item.Status)
 		if err != nil {
 			log.Println(err)
@@ -165,13 +195,20 @@ func(I *ItemRepo) GetAllItems(req *pb.Limit) (*pb.AllItems, error){
 	var total int32
 	query := `
 				SELECT 
-					id, count(id), name, category_id, condition, owner_id, status
+					id, name, category_id, condition, owner_id, status
 				FROM 
 					item_service_items
 				WHERE 
 					deleted_at is null`
+	queryTotal := `
+					SELECT 
+						count(*)
+					FROM
+						item_service_items
+					WHERE 
+						deleted_at is null`
 	
-	err := I.Db.QueryRow(query).Scan(nil, &total, nil, nil, nil, nil, nil)
+	err := I.Db.QueryRow(queryTotal).Scan(&total)
 	if err != nil{
 		log.Println(err)
 		return nil, err
@@ -194,7 +231,7 @@ func(I *ItemRepo) GetAllItems(req *pb.Limit) (*pb.AllItems, error){
 	}
 	for rows.Next(){
 		var item pb.AllItem
-		err := rows.Scan(&item.Id, nil, &item.Name, &item.CategoryId, &item.Condition, &item.OwnerId, &item.Status)
+		err := rows.Scan(&item.Id, &item.Name, &item.CategoryId, &item.Condition, &item.OwnerId, &item.Status)
 		if err != nil{
 			log.Println(err)
 			return nil, err
