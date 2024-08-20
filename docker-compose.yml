@@ -1,0 +1,13 @@
+services:
+   item:
+    build: .
+    container_name: item
+    ports:
+      - "6666:6666"
+    networks:
+      - eco
+
+  
+networks:
+  eco:
+    external: true
